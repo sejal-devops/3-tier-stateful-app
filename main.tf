@@ -160,7 +160,7 @@ resource "aws_ecs_task_definition" "app-ecs-task-defination" {
   family = "app-ecs-task-defination"
   container_definitions = jsonencode([{
     name      = "python"
-   image = "${aws_ecr_repository.app-ecr-repo.repository_url}:latest"  # Update with your ECR URI"
+   image = "${aws_ecr_repository.app-ecr-repo.repository_url}:2"  # Update with your ECR URI"
     cpu       = 128
     memory    = 128
     essential = true
