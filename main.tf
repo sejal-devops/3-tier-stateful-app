@@ -25,22 +25,22 @@ tags = {
     Name ="SDK-pub-rt"
 }
 }
-# //dmz-pub-subnet
-# resource "aws_subnet" "dmz_subnet" {
-#     vpc_id = aws_vpc.vpc.id
-#     cidr_block = var.dmz_subnet_CIDR
-#     availability_zone = var.az
+//dmz-pub-subnet
+resource "aws_subnet" "dmz_subnet" {
+    vpc_id = aws_vpc.vpc.id
+    cidr_block = var.dmz_subnet_CIDR
+    availability_zone = var.az
  
-#   tags = {
-#     Name =  "SDK-dmz-subnet}"
-#   }
-# }
+  tags = {
+    Name =  "SDK-dmz-subnet}"
+  }
+}
 
-# //dmz association in pub rt
-# resource "aws_route_table_association" "sdk-pub-rt-association" {
-#  subnet_id = aws_subnet.dmz_subnet.id
-#  route_table_id = aws_route_table.sdk-pub-rt.id
-# }
+//dmz association in pub rt
+resource "aws_route_table_association" "sdk-pub-rt-association" {
+ subnet_id = aws_subnet.dmz_subnet.id
+ route_table_id = aws_route_table.sdk-pub-rt.id
+}
 
 //create NAT gateway 
 resource "aws_nat_gateway" "nat" {
