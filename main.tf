@@ -189,7 +189,7 @@ EOF
 }
 resource "aws_autoscaling_group" "ecs-asg" {
   desired_capacity = 1
-  max_size = 1
+  max_size = 2
   min_size = 1
   vpc_zone_identifier = [aws_subnet.app_subnet.id]
   launch_template {
@@ -234,8 +234,8 @@ resource "aws_ecs_task_definition" "app-ecs-task-defination" {
   container_definitions = jsonencode([{
     name      = "Nginx"
    image = "${aws_ecr_repository.app-ecr-repo.repository_url}:latest"  # Update with your ECR URI"
-    cpu       = 128
-    memory    = 128
+    cpu       = 256
+    memory    = 512
     essential = true
     portMappings = [{
       containerPort = 80
