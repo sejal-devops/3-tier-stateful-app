@@ -25,22 +25,22 @@ tags = {
     Name ="SDK-pub-rt"
 }
 }
-//dmz-pub-subnet
-resource "aws_subnet" "dmz_subnet" {
-    vpc_id = aws_vpc.vpc.id
-    cidr_block = var.dmz_subnet_CIDR
-    availability_zone = var.az
+# //dmz-pub-subnet
+# resource "aws_subnet" "dmz_subnet" {
+#     vpc_id = aws_vpc.vpc.id
+#     cidr_block = var.dmz_subnet_CIDR
+#     availability_zone = var.az
  
-  tags = {
-    Name =  "SDK-dmz-subnet}"
-  }
-}
+#   tags = {
+#     Name =  "SDK-dmz-subnet}"
+#   }
+# }
 
-//dmz association in pub rt
-resource "aws_route_table_association" "sdk-pub-rt-association" {
- subnet_id = aws_subnet.dmz_subnet.id
- route_table_id = aws_route_table.sdk-pub-rt.id
-}
+# //dmz association in pub rt
+# resource "aws_route_table_association" "sdk-pub-rt-association" {
+#  subnet_id = aws_subnet.dmz_subnet.id
+#  route_table_id = aws_route_table.sdk-pub-rt.id
+# }
 
 //create NAT gateway 
 resource "aws_nat_gateway" "nat" {
@@ -57,6 +57,7 @@ resource "aws_nat_gateway" "nat" {
 resource "aws_eip" "nat-eip" {
     
   domain = "vpc" # Correctly specify that this is for a VPC
+  instance = aws_instance.nginx-server.id
 }
 
 
@@ -85,19 +86,19 @@ resource "aws_route_table_association" "sdk-app-pri-rt-association" {
   route_table_id = aws_route_table.sdk-pri-rt.id
 }
 
-resource "aws_subnet" "db-subnet" {
-  vpc_id = aws_vpc.vpc.id
-cidr_block = var.db_subnet_CIDR
-availability_zone = var.az
-tags = {
-  Name = "SDK-db-subnet"
-}
-}
-//DB-pri-rt-association
-resource "aws_route_table_association" "sdk-db-pri-rt-association" {
-  subnet_id = aws_subnet.db-subnet.id
-  route_table_id = aws_route_table.sdk-pri-rt.id
-}
+# resource "aws_subnet" "db-subnet" {
+#   vpc_id = aws_vpc.vpc.id
+# cidr_block = var.db_subnet_CIDR
+# availability_zone = var.az
+# # tags = {
+# #   Name = "SDK-db-subnet"
+# # }
+# }
+# //DB-pri-rt-association
+# resource "aws_route_table_association" "sdk-db-pri-rt-association" {
+#   subnet_id = aws_subnet.db-subnet.id
+#   route_table_id = aws_route_table.sdk-pri-rt.id
+# }
 
 resource "aws_security_group" "dmz-sg" {
   vpc_id = aws_vpc.vpc.id
@@ -136,20 +137,30 @@ resource "aws_instance" "nginx-server" {
     instance_type = var.instance_type
     key_name = "tf-key"
       vpc_security_group_ids = [aws_security_group.dmz-sg.id]
-associate_public_ip_address = true
 
+associate_public_ip_address = true
     subnet_id = aws_subnet.dmz_subnet.id
-    tags = {
-      Name = "nginx-server"
-    }
-  
+     # NGINX Configuration
+  user_data = <<-EOF
+              #!/bin/bash
+              yum update -y
+              yum install -y nginx
+              systemctl start nginx
+              systemctl enable nginx
+              EOF
+
+  tags = {
+    Name = "NGINX-Server"
+  }
 }
+  
 //-------------------------------------------------Part =2-application server---------------------------------------------------
 //ecr repo
 resource "aws_ecr_repository" "app-ecr-repo" {
   name = "app-ecr-repo"
     image_tag_mutability = "MUTABLE"
 }
+
 //ecs cluster
 resource "aws_ecs_cluster" "app-ecs-cluster" {
   name = "app-ecs-cluster"
@@ -160,7 +171,7 @@ resource "aws_ecs_task_definition" "app-ecs-task-defination" {
   family = "app-ecs-task-defination"
   container_definitions = jsonencode([{
     name      = "python"
-   image = "${aws_ecr_repository.app-ecr-repo.repository_url}:2"  # Update with your ECR URI"
+   image = "${aws_ecr_repository.app-ecr-repo.repository_url}:latest"  # Update with your ECR URI"
     cpu       = 128
     memory    = 128
     essential = true
@@ -169,11 +180,42 @@ resource "aws_ecs_task_definition" "app-ecs-task-defination" {
       hostPort      = 80  
     }]
   }])
-  network_mode            = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
+  network_mode            = "bridge"
+  requires_compatibilities = ["EC2"]
   cpu                      = "256"
   memory                   = "512"
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+}
+//ecs service 
+
+resource "aws_ecs_service" "app-ecs-service" {
+name = "app-ecs-service"
+cluster = aws_ecs_cluster.app-ecs-cluster.id
+task_definition = aws_ecs_task_definition.app-ecs-task-defination.arn
+desired_count = 1
+launch_type = "EC2"
+network_configuration {
+  subnets = [aws_subnet.app_subnet.id]
+  security_groups = [aws_security_group.app-sg.id]
+
+}
+
+}
+
+// Launch Template
+resource "aws_launch_configuration" "ecs_launch_config" {
+  name_prefix = "ecs-launch-config"  // Using name_prefix instead of name
+  image_id    = var.ec2_ami
+  instance_type = var.instance_type
+  key_name      = "tf-key"
+  iam_instance_profile = aws_iam_instance_profile.ecs_instance_profile.name
+  security_groups = [aws_security_group.app-sg.id]
+  
+ user_data = <<EOF
+#!/bin/bash
+echo ECS_CLUSTER=app-ecs-cluster >> /etc/ecs/ecs.config
+EOF
+
 }
 
 //app security group
@@ -185,6 +227,12 @@ resource "aws_security_group" "app-sg" {
     ingress {
         from_port   = 80
         to_port     = 80
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+     ingress {
+        from_port   = 443
+        to_port     = 443
         protocol    = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
@@ -201,21 +249,6 @@ resource "aws_security_group" "app-sg" {
     }
 }
 
-//ecs service 
-
-resource "aws_ecs_service" "app-ecs-service" {
-name = "app-ecs-service"
-cluster = aws_ecs_cluster.app-ecs-cluster.id
-task_definition = aws_ecs_task_definition.app-ecs-task-defination.arn
-desired_count = 1
-launch_type = "FARGATE"
-network_configuration {
-  subnets = [aws_subnet.app_subnet.id]
-  security_groups = [aws_security_group.app-sg.id]
-  assign_public_ip = false
-}
-
-}
 
 
 resource "aws_iam_role" "ecs_task_execution_role" {
@@ -239,46 +272,8 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy_attach
   role       = aws_iam_role.ecs_task_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
-# // Launch Template
-# resource "aws_launch_template" "ecs_launch_template" {
-#   name_prefix = "ecs-launch-template"  // Using name_prefix instead of name
-#   image_id    = var.ec2_ami
-#   instance_type = var.instance_type
-#   key_name      = "tf-key"
-#   vpc_security_group_ids = [aws_security_group.app-sg.id]
-#   // Security group IDs as a list
-#   # security_group_names = [aws_security_group.app-sg.name]  
-
-#   iam_instance_profile {
-#     name = aws_iam_instance_profile.ecs_instance_profile.name
-#   }
-
-#  user_data = base64encode(<<EOF
-# #!/bin/bash
-# echo ECS_CLUSTER=app-ecs-cluster >> /etc/ecs/ecs.config
-# EOF
-# )
-# }
-
-# // Auto Scaling Group
-# resource "aws_autoscaling_group" "ecs-asg" {
-  
 
 
-#   launch_template {
-#     id      = aws_launch_template.ecs_launch_template.id
-#   }
-
-#   min_size            = 1
-#   max_size            = 2
-#   desired_capacity    = 1
-#   vpc_zone_identifier = [aws_subnet.app_subnet.id]
-#   tag {
-#     key                 = "Name"
-#     value               = "app-instance"
-#     propagate_at_launch = true
-#   }
-# }
 
 resource "aws_iam_role" "ecs_instance_role" {
   name = "ecsInstanceRole"
