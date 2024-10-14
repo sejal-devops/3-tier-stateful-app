@@ -140,9 +140,9 @@ associate_public_ip_address = true
     subnet_id = aws_subnet.dmz_subnet.id
 
  
-lifecycle {
-  prevent_destroy = true
-}
+# lifecycle {
+#   prevent_destroy = true
+# }
   tags = {
     Name = "NGINX-Server"
   }
@@ -177,7 +177,11 @@ resource "aws_launch_template" "ecs_launch_config" {
   
   user_data = base64encode(<<EOF
 #!/bin/bash
+sudo apt update
+sudo apt install -y ecs-init
 echo ECS_CLUSTER=app-ecs-cluster >> /etc/ecs/ecs.config
+sudo systemctl start ecs
+
 EOF
 )
 
